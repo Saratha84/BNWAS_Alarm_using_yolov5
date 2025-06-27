@@ -1,0 +1,64 @@
+import cv2
+import torch
+import time
+from IPython.display import display, clear_output
+from PIL import Image
+import numpy as np
+
+# Load YOLOv5 nano model
+model = torch.hub.load('ultralytics/yolov5', 'yolov5n', pretrained=True)
+
+# Open webcam
+cap = cv2.VideoCapture(0)
+
+last_detection_time = time.time()
+alarm_triggered = False
+ALARM_THRESHOLD = 60  # seconds without detection before alarm triggers
+
+try:
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Failed to grab frame")
+            break
+
+        img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = model(img_rgb)
+
+        person_detected = False
+        for *box, conf, cls in results.xyxy[0]:
+            class_name = model.names[int(cls)]
+            if class_name == "person" and conf > 0.5:
+                person_detected = True
+                x1, y1, x2, y2 = map(int, box)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.putText(frame, f'{class_name} {conf:.2f}', (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+
+        current_time = time.time()
+        if person_detected:
+            last_detection_time = current_time
+            alarm_triggered = False
+        else:
+            elapsed = current_time - last_detection_time
+            if elapsed > ALARM_THRESHOLD and not alarm_triggered:
+                print("🚨 ALARM TRIGGERED: No person detected for", int(elapsed), "seconds")
+                alarm_triggered = True
+
+        # Convert BGR to RGB for display
+        img_display = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        img_pil = Image.fromarray(img_display)
+
+        clear_output(wait=True)
+        display(img_pil)
+
+        # Add a small delay to reduce flickering and CPU load
+        time.sleep(0.05)
+
+except KeyboardInterrupt:
+    print("Stream stopped by user.")
+
+finally:
+    cap.release()
+    clear_output()
+    print("Webcam released.")
